@@ -18,23 +18,19 @@ import numpy as np
 import cv2
 import gc
 
-
-def demo():     
-    # TO DO #
-
-    #find camera
+def createCam():
     cameraCnt, cameraList = enumCameras()
     if cameraCnt is None or cameraCnt < 1:
         print("No camera found.")
         return -1
-    camera = cameraList[0]
-    
     # connect and check connection to camera
     if openCamera(camera) != 0:
         print("Failed to open camera.")
         return -1
-    
-    #create stream source object
+    camera = cameraList[0]
+    return camera
+
+def setingsCamera(camera):
     streamSourceInfo = GENICAM_StreamSourceInfo()
     streamSourceInfo.channelId = 0
     streamSourceInfo.pCamera = pointer(camera)
@@ -44,7 +40,7 @@ def demo():
         print("Failed to create stream source.")
         return -1
     
-    # Bước 4: Turn off Trigger (Free run)
+    # turn off Trigger (Free run)
     trigModeEnumNode = pointer(GENICAM_EnumNode())
     trigModeEnumNodeInfo = GENICAM_EnumNodeInfo()
     trigModeEnumNodeInfo.pCamera = pointer(camera)
@@ -57,13 +53,22 @@ def demo():
     trigModeEnumNode.contents.setValueBySymbol(trigModeEnumNode, b"Off")
     trigModeEnumNode.contents.release(trigModeEnumNode)
 
+
+    return streamSource
+
+def demo():     
+    # TO DO #
+    camera = -1
+    camera = createCam()
+    streamSource = setingsCamera(camera)
+
     userInfo = b"capstone_demo"
     if streamSource.contents.attachGrabbingEx(streamSource, frameCallbackFuncEx, userInfo) != 0:
         print("Failed to attach frame callback.")
         streamSource.contents.release(streamSource)
         return -1
     
-        # Bước 6: Bắt đầu lấy ảnh
+    # Bước 6: Bắt đầu lấy ảnh
     if streamSource.contents.startGrabbing(streamSource, 
                                            c_ulonglong(0), 
                                            c_int(GENICAM_EGrabStrategy.grabStrartegySequential)) != 0:

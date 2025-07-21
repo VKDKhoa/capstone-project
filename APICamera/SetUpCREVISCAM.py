@@ -15,6 +15,7 @@ def deviceLinkNotify(connectArg, linkInfo):
         print("camera has on line, userInfo [%s]" %(c_char_p(linkInfo).value))
 
 connectCallBackFuncEx = connectCallBackEx(deviceLinkNotify)
+
 def enumCameras():
     # 获取系统单例
     system = pointer(GENICAM_System())
@@ -36,11 +37,13 @@ def enumCameras():
     else:
         print("cameraCnt: " + str(cameraCnt.value))
         return cameraCnt.value, cameraList
+    
 def subscribeCameraStatus(camera):
     # 注册上下线通知
     eventSubscribe = pointer(GENICAM_EventSubscribe())
     eventSubscribeInfo = GENICAM_EventSubscribeInfo()
     eventSubscribeInfo.pCamera = pointer(camera)
+    
     nRet = GENICAM_createEventSubscribe(byref(eventSubscribeInfo), byref(eventSubscribe))
     if ( nRet != 0):
         print("create eventSubscribe fail!")
@@ -78,6 +81,7 @@ def unsubscribeCameraStatus(camera):
     # 不再使用时，需释放相关资源
     eventSubscribe.contents.release(eventSubscribe)
     return 0   
+
 def openCamera(camera):
     # 连接相机
     nRet = camera.connect(camera, c_int(GENICAM_ECameraAccessPermission.accessPermissionControl))
@@ -93,6 +97,7 @@ def openCamera(camera):
         print("subscribeCameraStatus fail!")
         return -1
     return 0
+
 def closeCamera(camera):
     # 反注册相机连接状态回调
     nRet = unsubscribeCameraStatus(camera)
@@ -106,7 +111,103 @@ def closeCamera(camera):
         print("disConnect camera fail!")
         return -1
     
-    return 0  
+    return 0
+
+def setExposureTime(camera, dVal):
+    # 通用属性设置:设置曝光 --根据属性类型，直接构造属性节点。如曝光是 double类型，构造doubleNode节点
+    exposureTimeNode = pointer(GENICAM_DoubleNode())
+    exposureTimeNodeInfo = GENICAM_DoubleNodeInfo() 
+    exposureTimeNodeInfo.pCamera = pointer(camera)
+    exposureTimeNodeInfo.attrName = b"ExposureTime"
+    
+    nRet = GENICAM_createDoubleNode(byref(exposureTimeNodeInfo), byref(exposureTimeNode))
+    if ( nRet != 0 ):
+        print("create ExposureTime Node fail!")
+        return -1
+      
+    # 设置曝光时间
+    nRet = exposureTimeNode.contents.setValue(exposureTimeNode, c_double(dVal))  
+    if ( nRet != 0 ):
+        print("set ExposureTime value [%f]us fail!"  % (dVal))
+        # 释放相关资源
+        exposureTimeNode.contents.release(exposureTimeNode)
+        return -1
+    else:
+        print("set ExposureTime value [%f]us success." % (dVal))
+            
+    # 释放节点资源     
+    exposureTimeNode.contents.release(exposureTimeNode)    
+    return 0
+
+def setGain(camera, gainVal):
+    # set GainRaw = gainVal
+    gainNode = pointer(GENICAM_IntNode())
+    gainNodeInfo = GENICAM_IntNodeInfo()
+    gainNodeInfo.pCamera = pointer(camera)
+    gainNodeInfo.attrName = b"GainRaw"
+
+    nRet = GENICAM_createIntNode(byref(gainNodeInfo), byref(gainNode))
+    if nRet != 0:
+        print("create GainRaw Node fail!")
+        return -1
+    nRet = gainNode.contents.setValue(gainNode, c_longlong(gainVal))
+    if nRet != 0:
+        print("set GainRaw value fail!")
+        return -1
+    else:
+        print(f"Set GainRaw = {gainVal} success.")
+    
+    gainNode.contents.release(gainNode)
+    return 0
+
+def setAcquisitionMode(camera, acqMode):
+    #### setting acquisition continous mode ####
+    acqCtrlInfo = GENICAM_AcquisitionControlInfo()
+    acqCtrlInfo.pCamera = pointer(camera)
+    acqCtrl = pointer(GENICAM_AcquisitionControl())
+
+    nRet = GENICAM_createAcquisitionControl(pointer(acqCtrlInfo), byref(acqCtrl))
+    if (nRet != 0):
+        print("create AcquisitionControl fail!")
+        return -1
+    
+    acqModeNode = acqCtrl.contents.acquisitionMode(acqCtrl)
+    nRet = acqModeNode.setValueBySymbol(byref(acqModeNode), acqMode)
+    if (nRet != 0):
+        print("set AcquisitionMode [Continuous] fail!")
+        acqModeNode.release(byref(acqModeNode))
+        acqCtrl.contents.release(acqCtrl)
+        return -1
+    
+    # Release nodes acquisition
+    acqModeNode.release(byref(acqModeNode))
+    acqCtrl.contents.release(acqCtrl)
+    print("Set AcquisitionMode = Continuous OK.")
+    return 0
+
+def setTriggerModeOff(camera, streamSource):
+    ######### turn off trigger mode #################
+    trigModeEnumNode = pointer(GENICAM_EnumNode())
+    trigModeEnumNodeInfo = GENICAM_EnumNodeInfo() 
+    trigModeEnumNodeInfo.pCamera = pointer(camera)
+    trigModeEnumNodeInfo.attrName = b"TriggerMode"
+    
+    nRet = GENICAM_createEnumNode(byref(trigModeEnumNodeInfo), byref(trigModeEnumNode))
+    if ( nRet != 0 ):
+        print("create TriggerMode Node fail!")
+        streamSource.contents.release(streamSource) 
+        return -1
+    
+    nRet = trigModeEnumNode.contents.setValueBySymbol(trigModeEnumNode, b"Off")
+    if ( nRet != 0 ):
+        print("set TriggerMode value [Off] fail!")
+        trigModeEnumNode.contents.release(trigModeEnumNode)
+        streamSource.contents.release(streamSource) 
+        return -1 
+    #release trigger node    
+    trigModeEnumNode.contents.release(trigModeEnumNode)
+    return 0 
+
 def setROI(camera, OffsetX, OffsetY, nWidth, nHeight):
     #获取原始的宽度
     widthMaxNode = pointer(GENICAM_IntNode())
@@ -236,3 +337,42 @@ def setROI(camera, OffsetX, OffsetY, nWidth, nHeight):
     OffsetYNode.contents.release(OffsetYNode)   
     return 0
             
+def convertOpenCV(frame) -> numpy.ndarray:
+    nRet = frame.contents.valid(frame)
+    if ( nRet != 0):
+        print("frame is invalid!")
+        # 释放驱动图像缓存资源
+        frame.contents.release(frame)
+        return None        
+ 
+    #print("BlockId = %d userInfo = %s"  %(frame.contents.getBlockId(frame), c_char_p(userInfo).value))
+
+    #此处客户应用程序应将图像拷贝出使用
+    
+    # parameter of frame
+    imageParams = IMGCNV_SOpenParam()
+    imageParams.dataSize    = frame.contents.getImageSize(frame)
+    imageParams.height      = frame.contents.getImageHeight(frame)
+    imageParams.width       = frame.contents.getImageWidth(frame)
+    imageParams.paddingX    = frame.contents.getImagePaddingX(frame)
+    imageParams.paddingY    = frame.contents.getImagePaddingY(frame)
+    imageParams.pixelForamt = frame.contents.getImagePixelFormat(frame)
+
+    # move data frome driver camera to python
+    imageBuff = frame.contents.getImage(frame)
+    userBuff = c_buffer(b'\0', imageParams.dataSize)
+    memmove(userBuff, c_char_p(imageBuff), imageParams.dataSize)
+
+    # 释放驱动图像缓存资源
+    frame.contents.release(frame)
+
+    # 如果图像格式是 Mono8 直接使用
+    if imageParams.pixelForamt == EPixelType.gvspPixelMono8:
+        # grayByteArray = bytearray(userBuff)
+        # cvImage = numpy.array(grayByteArray).reshape(imageParams.height, imageParams.width)
+        frameData = numpy.frombuffer(userBuff, dtype=numpy.uint8)
+        expected_size = imageParams.width * imageParams.height
+        frameData = frameData[:expected_size]  # C?t n?u du
+        cvImage = frameData.reshape((imageParams.height, imageParams.width))
+    
+    return cvImage

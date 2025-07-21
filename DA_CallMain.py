@@ -17,6 +17,9 @@ from DA_DetectDefect import DetectDefection
 #from DA_QRDecocde import ReadAndDecodeQR
 from DA_QRDecocde import ReadAndDecodeQR
 
+# import the packages for MySQL, PLC connection and camera setting && connection
+from DA_Connection import *
+
 # import PyQt5 for GUI
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import Qt
@@ -25,6 +28,7 @@ from PyQt5.QtCore import Qt
 from APICamera.MVSDK import *
 from APICamera.ImageConvert import *
 from APICamera.SetUpCREVISCAM import *
+
 ############### END IMPORT #################
 
 VideoPath = [0,1,'IMG/Video/record.mp4']
@@ -48,159 +52,32 @@ def show_image_to_label(cv_img, label) -> None:
 
     label.setPixmap(pixmap.scaled(label.width(), label.height(), Qt.KeepAspectRatio))
 
-
+def onGetFrameEx(frame):
+    pass
 def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
     ############### Connect and create Camere #############################
-    cameraCnt = None
-    CameraList = None
     countFail = 0
-    while True:
+    cap = -1 #initialize camera
+    cap = create_camera_connection()
+    while cap == -1: #if camera is not connected, try to connect again
+        countFail += 1
         if countFail >= 20:
             return
-        cameraCnt, cameraList = enumCameras()
-        if cameraCnt is None:
-            countFail += 1
-            continue
-        else:
-            countFail = 0
-            break
-    cap = cameraList[0]
-    #### open camera ####
-    nRet = openCamera(cap)
-    if ( nRet != 0 ):
-        print("openCamera fail.")
-        return;
-    #### setting resolution ###########
-    #Set Width = 1644
-    widthNode = pointer(GENICAM_IntNode())
-    widthNodeInfo = GENICAM_IntNodeInfo()
-    widthNodeInfo.pCamera = pointer(cap)
-    widthNodeInfo.attrName = b"Width"
-
-    nRet = GENICAM_createIntNode(byref(widthNodeInfo), byref(widthNode))
-    if nRet == 0:
-        widthNode.contents.setValue(widthNode, c_longlong(1644))
-        widthNode.contents.release(widthNode)
+        cap = create_camera_connection()
     
-    # Set Height = 1236
-    heightNode = pointer(GENICAM_IntNode())
-    heightNodeInfo = GENICAM_IntNodeInfo()
-    heightNodeInfo.pCamera = pointer(cap)
-    heightNodeInfo.attrName = b"Height"
-
-    nRet = GENICAM_createIntNode(byref(heightNodeInfo), byref(heightNode))
-    if nRet == 0:
-        heightNode.contents.setValue(heightNode, c_longlong(1236))
-        heightNode.contents.release(heightNode)
+    #### setting camera ###########
+    streamSource = set_camera_settings(cap,
+                        width=1000,
+                        height=1000,
+                        offsetX= 1644//2 -500,
+                        offsetY=1236//2 -500,
+                        exposureTimeVal=30000,
+                        gainVal=300000,
+                        acqMode = b"Continuous") #set the camera settings
     
-    # Set OffsetX
-    offsetXNode = pointer(GENICAM_IntNode())
-    offsetXNodeInfo = GENICAM_IntNodeInfo()
-    offsetXNodeInfo.pCamera = pointer(cap)
-    offsetXNodeInfo.attrName = b"OffsetX"
-
-    nRet = GENICAM_createIntNode(byref(offsetXNodeInfo), byref(offsetXNode))
-    if nRet == 0:
-        offsetXNode.contents.setValue(offsetXNode, c_longlong(0))
-        offsetXNode.contents.release(offsetXNode)
-
-    # Set OffsetY
-    offsetYNode = pointer(GENICAM_IntNode())
-    offsetYNodeInfo = GENICAM_IntNodeInfo()
-    offsetYNodeInfo.pCamera = pointer(cap)
-    offsetYNodeInfo.attrName = b"OffsetY"
-
-    nRet = GENICAM_createIntNode(byref(offsetYNodeInfo), byref(offsetYNode))
-    if nRet == 0:
-        offsetYNode.contents.setValue(offsetYNode, c_longlong(0))
-        offsetYNode.contents.release(offsetYNode)
-    
-    # set ExposureTime 
-    exposureTimeNode = pointer(GENICAM_DoubleNode())
-    exposureTimeNodeInfo = GENICAM_DoubleNodeInfo()
-    exposureTimeNodeInfo.pCamera = pointer(cap)
-    exposureTimeNodeInfo.attrName = b"ExposureTime"
-
-    nRet = GENICAM_createDoubleNode(byref(exposureTimeNodeInfo), byref(exposureTimeNode))
-    if nRet != 0:
-        print("create ExposureTime Node fail!")
-        return -1
-    exposureTimeVal = 0
-    nRet = exposureTimeNode.contents.setValue(exposureTimeNode, c_double(exposureTimeVal))
-    if nRet != 0:
-        print("set ExposureTime value fail!")
-    else:
-        print(f"Set ExposureTime = {exposureTimeVal}us success.")
-    
-    # set GainRaw = 450000
-    gainNode = pointer(GENICAM_IntNode())
-    gainNodeInfo = GENICAM_IntNodeInfo()
-    gainNodeInfo.pCamera = pointer(cap)
-    gainNodeInfo.attrName = b"GainRaw"
-
-    nRet = GENICAM_createIntNode(byref(gainNodeInfo), byref(gainNode))
-    if nRet != 0:
-        print("create GainRaw Node fail!")
-        return -1
-    gainVal = 450000
-    nRet = gainNode.contents.setValue(gainNode, c_longlong(gainVal))
-    if nRet != 0:
-        print("set GainRaw value fail!")
-    else:
-        print(f"Set GainRaw = {gainVal} success.")
-    gainNode.contents.release(gainNode)
-    
-    #### setting acquisition continous mode ####
-    acqCtrlInfo = GENICAM_AcquisitionControlInfo()
-    acqCtrlInfo.pCamera = pointer(cap)
-    acqCtrl = pointer(GENICAM_AcquisitionControl())
-
-    nRet = GENICAM_createAcquisitionControl(pointer(acqCtrlInfo), byref(acqCtrl))
-    if (nRet != 0):
-        print("create AcquisitionControl fail!")
+    if streamSource is None:
+        print("Failed to set camera settings.")
         return
-    acqModeNode = acqCtrl.contents.acquisitionMode(acqCtrl)
-    nRet = acqModeNode.setValueBySymbol(byref(acqModeNode), b"Continuous")
-    if (nRet != 0):
-        print("set AcquisitionMode [Continuous] fail!")
-        acqModeNode.release(byref(acqModeNode))
-        acqCtrl.contents.release(acqCtrl)
-        return
-    # Release nodes acquisition
-    acqModeNode.release(byref(acqModeNode))
-    acqCtrl.contents.release(acqCtrl)
-    print("Set AcquisitionMode = Continuous OK.")
-
-    ########## setting stream for receive image ##############
-    streamSourceInfo = GENICAM_StreamSourceInfo()
-    streamSourceInfo.channelId = 0
-    streamSourceInfo.pCamera = pointer(cap)
-      
-    streamSource = pointer(GENICAM_StreamSource())
-    nRet = GENICAM_createStreamSource(pointer(streamSourceInfo), byref(streamSource))
-    if ( nRet != 0 ):
-        print("create StreamSource fail!")
-        return
-    
-    ######### turn off trigger mode #################
-    trigModeEnumNode = pointer(GENICAM_EnumNode())
-    trigModeEnumNodeInfo = GENICAM_EnumNodeInfo() 
-    trigModeEnumNodeInfo.pCamera = pointer(cap)
-    trigModeEnumNodeInfo.attrName = b"TriggerMode"
-    nRet = GENICAM_createEnumNode(byref(trigModeEnumNodeInfo), byref(trigModeEnumNode))
-    if ( nRet != 0 ):
-        print("create TriggerMode Node fail!")
-        streamSource.contents.release(streamSource) 
-        return
-    nRet = trigModeEnumNode.contents.setValueBySymbol(trigModeEnumNode, b"Off")
-    if ( nRet != 0 ):
-        print("set TriggerMode value [Off] fail!")
-        trigModeEnumNode.contents.release(trigModeEnumNode)
-        streamSource.contents.release(streamSource) 
-        return
-    #release trigger node    
-    trigModeEnumNode.contents.release(trigModeEnumNode) 
-    
     
     # start grabbing 
     nRet = streamSource.contents.startGrabbing(streamSource, c_ulonglong(0), \
@@ -210,6 +87,7 @@ def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
         # realease if grabing fail
         streamSource.contents.release(streamSource)   
         return
+    
     ################ parameter for system processing #####################
     IMG_LIST = [] #list of object being detected and still not processed
     ROI = [] #list to contain the ROI matrix of objectS
@@ -223,58 +101,35 @@ def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
      ################ start stream camera #####################
     global run
     run = True
+    TimeoutValue = 1000 #timeout value for getFrame
     while run: # loop for stream camera
         # create frame
         raw_frame = pointer(GENICAM_Frame())
-        nRet = streamSource.contents.getFrame(streamSource, byref(raw_frame), c_uint(1000))
+        nRet = streamSource.contents.getFrame(streamSource, byref(raw_frame), c_uint(TimeoutValue))
         if ( nRet != 0 ):
-            print("getFrame fail! Timeout:[500]ms")
-            # release 
+            print("getFrame fail! Timeout:%d ms", TimeoutValue)
+            # release if getFrame fail
             streamSource.contents.release(streamSource)   
             return
         
-        # pre process frame
-        nRet = raw_frame.contents.valid(raw_frame)
-        if ( nRet != 0 ):
-            print("frame is invalid!")
+        # convert frame to OpenCV format
+        frame = convertOpenCV(raw_frame) #convert the frame to OpenCV format
+        if frame is None:
+            print("convertOpenCV fail!")
             # release frame
-            frame.contents.release(frame)
+            raw_frame.contents.release(raw_frame)
             # release stream source
             streamSource.contents.release(streamSource)
             return
-        # parameter of frame
-        imageParams = IMGCNV_SOpenParam()
-        imageParams.dataSize    = raw_frame.contents.getImageSize(raw_frame)
-        imageParams.height      = raw_frame.contents.getImageHeight(raw_frame)
-        imageParams.width       = raw_frame.contents.getImageWidth(raw_frame)
-        imageParams.paddingX    = raw_frame.contents.getImagePaddingX(raw_frame)
-        imageParams.paddingY    = raw_frame.contents.getImagePaddingY(raw_frame)
-        imageParams.pixelForamt = raw_frame.contents.getImagePixelFormat(raw_frame)
         
-        # move data frome driver camera to python
-        imageBuff = raw_frame.contents.getImage(raw_frame) #pointer from driver camera contain data raw_frame
-        userBuff = c_buffer(b'\0', imageParams.dataSize) # create new memory so that it can be used in Python 
-        memmove(userBuff, c_char_p(imageBuff), imageParams.dataSize) # Copy data raw_frame from pointer ImageBuff to userBuff-access by Python
+        # display the frame
+        copyForDisplay = frame.copy() #copy the frame for display
+        display_frame = cv2.resize(copyForDisplay,(500,500), interpolation=cv2.INTER_AREA)
         
-        # release frame
-        raw_frame.contents.release(raw_frame)
-                # Pixel format is Mono8
-        if imageParams.pixelForamt == EPixelType.gvspPixelMono8:
-            frameData = np.frombuffer(userBuff, dtype=np.uint8)
-            expected_size = imageParams.width * imageParams.height
-            frameData = frameData[:expected_size]
-            frame = frameData.reshape((imageParams.height, imageParams.width))
-        
-        display_frame = cv2.resize(frame,(500,500), interpolation=cv2.INTER_AREA)
-        
-        #frame = frame[90:480, 120:510] #y should be first, scale the frame to reduce the size and noise
+        #show the frame to label in GUI
         show_image_to_label(display_frame, label) #show the frame to label in GUI
         
-        #print("Frame size: ",frame.shape) #check the frame size
-        #frame testing = [101:476, 101:529], [90:480, 110:510]
-        
         #Write the code here
-        
         if ROI is not None and len(ROI) > 0:
             QR_Object.update_isObject(True) #update status of detect object
             QR_Object.update_roi(ROI) #save the ROI to object

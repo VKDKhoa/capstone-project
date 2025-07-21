@@ -517,7 +517,7 @@ def demo():
     nRet = openCamera(camera)
     if ( nRet != 0 ):
         print("openCamera fail.")
-        return -1;
+        return -1
         
     # 创建流对象
     streamSourceInfo = GENICAM_StreamSourceInfo()
