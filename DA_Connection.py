@@ -26,7 +26,7 @@ def create_camera_connection():
     return camera
 
 def set_camera_settings(camera, width=1644, height=1236, offsetX=0, offsetY=0,
-                        exposureTimeVal=0, gainVal=300000, acqMode=b"Continuous"):
+                        exposureTimeVal=0, gainVal=300000,gammaVal = 1.0, acqMode=b"Continuous"):
     
     # Set ROI
     if setROI(camera, offsetX, offsetY, width, height) != 0:
@@ -42,6 +42,7 @@ def set_camera_settings(camera, width=1644, height=1236, offsetX=0, offsetY=0,
     if setGain(camera, gainVal) != 0:
         print("Set gain failed.")
         return None
+    
     
     # Set acquisition mode
     if setAcquisitionMode(camera, acqMode) != 0:

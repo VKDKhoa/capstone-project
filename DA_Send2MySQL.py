@@ -13,7 +13,8 @@ class DA_Send2MySQL:
                 )
             self.cursor = self.conn.cursor()
             self.isConnect = self.conn.is_connected()
-            print("Connected to MySQL")
+            if self.isConnect:
+                print("Connected to MySQL success")
         except mysql.connector.Error as e:
             print("Fail to Connect MySQL DB due to",e)
             self.isConnect = False
@@ -27,6 +28,7 @@ class DA_Send2MySQL:
         query = "SELECT 1 FROM qrnotsorted WHERE id = %s" #query to check if the data is exist
         self.cursor.execute(query, (data,))
         result = self.cursor.fetchone()
+        
         return result is not None #true if data is exist, false if data is not exist
     
     # Show the data in the table qrissorted

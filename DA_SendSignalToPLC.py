@@ -10,6 +10,8 @@ class DA_SendSignal2PLC:
                 bytesize=8,
                 parity='N',
                 stopbits=1 )
+            if self.client.connect():
+                print("Connect to PLC board success")
         except Exception as e:
             print("Fail to connect to PLC due to",e)
         finally:

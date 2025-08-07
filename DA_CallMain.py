@@ -6,6 +6,8 @@ import cv2
 import time
 import gc 
 import struct
+import threading
+import queue
 import numpy as np
 
 # import the packages for detection object in camera
@@ -39,9 +41,19 @@ VideoPath = [0,1,'IMG/Video/record.mp4']
 global run
 run = False
 
+# store result into output.txt for debug
+import sys
+def run_and_log(log_file: str) -> None:
+    log_file = open(log_file, "a")
+    log_file.write("\n\n=== Run ===\n")
+    log_file.write("Output:\n")
+    log_file.flush()
+    sys.stdout = log_file
+    sys.stderr = log_file
+        
 #show image from camera openCV to label in GUI, for display purpose
-def show_image_to_label(cv_img, label) -> None:
-    rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB) #convert the image to RGB format
+def show_image_to_label(cv_img: np.ndarray, label: QPixmap) -> None:
+    rgb_image = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB) if(len(cv_img.shape) > 2) else cv2.cvtColor(cv_img, cv2.COLOR_GRAY2RGB) #convert the image to RGB format
     resize_img = cv2.resize(rgb_image, (label.width(), label.height())) #resize the image to fit the label size
     
     h, w, ch = resize_img.shape #get the height, width and channel of the image
@@ -52,10 +64,46 @@ def show_image_to_label(cv_img, label) -> None:
 
     label.setPixmap(pixmap.scaled(label.width(), label.height(), Qt.KeepAspectRatio))
 
-def onGetFrameEx(frame):
-    pass
+
+######## FUNCTION FOR IMAGE PROCESSING IN THREAD #######################
+processing_queue = queue.Queue()
+display_queue = queue.Queue() 
+stop_event = threading.Event()
+
+def process_img(Product: Object,MySQLconn, PLCconn) -> None:
+    """ PROCESSING EACH OF IMAGE PRODUCT """
+    Product.isDefected = DetectDefection(Product.roi,Product.isDefected)
+    
+    if(Product.isDefected):
+        print("Product has damage")
+        cv2.imshow("Damage Product", cv2.resize(Product.roi, (300, 300)))
+        cv2.waitKey(1)
+        return
+    print("product has no damage, start decode QR")
+    isQrProduct: bool = ReadAndDecodeQR(Product.roi,MySQLconn,PLCconn)
+    if isQrProduct:
+        print("decode QR success")
+    else:
+        print("decode false")
+
+def processing_worker(MySQLconn, PLCconn):
+    """Worker thread run continously"""
+    while not stop_event.is_set():  
+        try:
+            product = processing_queue.get(timeout=1)
+            if product is None: 
+                break
+            
+            # call fuction for img process
+            process_img(product,MySQLconn, PLCconn)
+            processing_queue.task_done()
+        except queue.Empty:
+            continue
+
 def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
-    ############### Connect and create Camere #############################
+    
+    #run_and_log("output.txt") #save result in terminal to output.txt for debug
+    ############### Connect and create Camera #############################
     countFail = 0
     cap = -1 #initialize camera
     cap = create_camera_connection()
@@ -67,12 +115,12 @@ def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
     
     #### setting camera ###########
     streamSource = set_camera_settings(cap,
-                        width=1000,
-                        height=1000,
-                        offsetX= 1644//2 -500,
-                        offsetY=1236//2 -500,
-                        exposureTimeVal=30000,
-                        gainVal=300000,
+                        width=1644,
+                        height=1236,
+                        offsetX= 0,
+                        offsetY=0,
+                        exposureTimeVal=250,
+                        gainVal=250000,
                         acqMode = b"Continuous") #set the camera settings
     
     if streamSource is None:
@@ -89,27 +137,38 @@ def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
         return
     
     ################ parameter for system processing #####################
-    IMG_LIST = [] #list of object being detected and still not processed
-    ROI = [] #list to contain the ROI matrix of objectS
+    
+    IMG_LIST: list[Object] = [] #list of object being detected and still not processed
+    ROI: np.ndarray = np.array([]) # to contain the ROI of object being detected
+    FRAME_LIST: list[np.ndarray] = [] #list of ROI being detected
     
     isDefected: bool = False #Check if the QR label is defected
     isObject: bool = False #Check if the object is detected
-    
+
     n:int = 0 #Count the number of objetc
-    i:int = 0 #To store the img that can not be Decode or dectect
+    i:int = 20 #To store the img that can not be Decode or dectect
     
-     ################ start stream camera #####################
+    ################ start stream camera #####################
     global run
     run = True
     TimeoutValue = 1000 #timeout value for getFrame
-    while run: # loop for stream camera
+    t_prev = time.time()
+    
+    #Create thread for porcess img extract from camera while camera still stream
+    worker_thread = threading.Thread(target=processing_worker,args=(MySQLconn, PLCconn), daemon=True)
+    worker_thread.start()
+    
+    # loop for stream camera
+    while run: 
         # create frame
+        """ READ FRAME FROM CREVIS CAMERA AND CONVERT INTO OPENCV FORAMT"""
         raw_frame = pointer(GENICAM_Frame())
         nRet = streamSource.contents.getFrame(streamSource, byref(raw_frame), c_uint(TimeoutValue))
         if ( nRet != 0 ):
             print("getFrame fail! Timeout:%d ms", TimeoutValue)
             # release if getFrame fail
-            streamSource.contents.release(streamSource)   
+            streamSource.contents.release(streamSource)
+            stop_event.set()   
             return
         
         # convert frame to OpenCV format
@@ -118,55 +177,87 @@ def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
             print("convertOpenCV fail!")
             # release frame
             raw_frame.contents.release(raw_frame)
+            stop_event.set()
             # release stream source
             streamSource.contents.release(streamSource)
             return
         
-        # display the frame
-        copyForDisplay = frame.copy() #copy the frame for display
-        display_frame = cv2.resize(copyForDisplay,(500,500), interpolation=cv2.INTER_AREA)
-        
-        #show the frame to label in GUI
-        show_image_to_label(display_frame, label) #show the frame to label in GUI
+        """ START PROCESSING AFTER CONVERT OPENCV """
+        #frame = frame[90:480, 120:510] 
+        display_frame: np.ndarray = frame.copy() #copy the frame for display purpose
+        display_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2GRAY) if(len(display_frame.shape) > 2) else display_frame
+        if label is not None:
+            show_image_to_label(display_frame,label)
+        else:
+            cv2.imshow("display frame", cv2.resize(display_frame,(500,500))) #show the frame in window
         
         #Write the code here
-        if ROI is not None and len(ROI) > 0:
-            QR_Object.update_isObject(True) #update status of detect object
-            QR_Object.update_roi(ROI) #save the ROI to object
-            n += 1 #increase the number of object
-            if len(QR_Object.roi) > 0:
-                IMG_LIST.append(QR_Object)
-            ROI = [] # reset ROI after add it to list
-        else:
-            QR_Object = Object(ROI,isObject,isDefected,frame) # if object detect in frame, creat Object name QR_Object
-            ROI = QR_Object.DetectAndCaptureObject() #continue to scan for object
+        frame: np.ndarray = cv2.cvtColor(raw_frame.copy(),cv2.COLOR_BGR2GRAY) if(len(frame.shape) > 2) else frame  #resize the frame to fit the label size
         
-        #print("ROI LENGHT: ",len(IMG_LIST))
+        #cv2.imshow("frame for processing", cv2.resize(frame,(500,500))) #show the frame in window
+        FRAME_LIST.append(frame) #add the frame to the list of frame
         
-        if IMG_LIST != [] and len(IMG_LIST[0].roi) > 0:
-            #Start Detect the defection
-            #cv2.imshow("current_img",IMG_LIST[0].roi)
-            isCurrentObjectDefect = DetectDefection(IMG_LIST[0].roi,IMG_LIST[0].isDefected)
-            IMG_LIST[0].update_isDefect(isCurrentObjectDefect)
-            
-            if IMG_LIST[0].isDefected:#if not defected, check the angle
-                PLCconn.SendToPLC("Damaged")
-                MySQLconn.handleWithDamagedData()
-                print("Defected")
+        #t_prev = time.time()
+        while len(FRAME_LIST) > 0:
+            if isObject is True:
+                # print("list of frame",len(FRAME_LIST)) 
+                FRAME_LIST.pop(0)# skip to avoid reading many time
+                isObject = False
+                continue
             else:
-                isSuccess:bool = ReadAndDecodeQR(IMG_LIST[0].frame,MySQLconn, PLCconn) #decode the QR code and save the data to MySQL
-                if not isSuccess:
-                    cv2.imwrite(f'IMG/IDK{i}.jpg',IMG_LIST[0].frame)
-                    i += 1
+                ROI = Object.DetectAndCaptureObject(FRAME_LIST[0])#detect and capture the object in the frame
+            #cv2.imwrite(f'extractFrame/QR_Product_num_{i}.jpg',FRAME_LIST[0]) #save the frame to file
             
-            current_roi = cv2.resize(IMG_LIST[0].roi,(300,300), interpolation=cv2.INTER_AREA) #to showing the current object in processing
-            show_image_to_label(current_roi, label_2)
-            #print("Current object: ",IMG_LIST[0].roi.shape) #check the current object size
-            #cv2.imshow("Current Object",current_roi)
-            IMG_LIST.pop(0)
-            gc.collect()
-            if (cv2.waitKey(1) & 0xFF == 27) or run == False: 
-                break
+            if ROI.size > 0: #if the ROI is not empty
+                t_current = time.time()
+                print("====================== Object time detect ==========================")
+                print(f"detect object at time: {t_current}")
+                print(f"previous time detect object: {t_prev}")
+                print(f"t_prev memory address: {id(t_prev)}")  # Kiểm tra biến
+                print(f"time space = {(t_current - t_prev)}")
+                if((t_current - t_prev) < 0.3):
+                    print("time space too small: time space = ", (t_current - t_prev))
+                    FRAME_LIST.pop(0)
+                    continue
+                print(f"time space available = {(t_current - t_prev)}")
+                print(f"BEFORE UPDATE - t_prev = {t_prev}")
+                t_prev = t_current
+                print(f"AFTER UPDATE - t_prev = {t_prev}")
+                isObject = True
+                
+                #cv2.imshow("frame contain QR product", cv2.resize(FRAME_LIST[0],(300,300),cv2.INTER_AREA))
+                
+                #cv2.imwrite(f'CREVIS_IMG/extractFrame/QR_Product_num_{i}.jpg',FRAME_LIST[0]) #save the frame to file
+                
+                print("Object detected, ROI size: ", ROI.size)
+                QR_Object: Object = Object(ROI,isObject,isDefected,FRAME_LIST[0]) # if object detect in frame, creat Object name QR_Object
+                QR_Object.update_isObject(isObject) #update status of detect object
+                #QR_Object.update_roi(ROI) #save the ROI to object
+                IMG_LIST.append(QR_Object)
+                
+                if(len(IMG_LIST) > 0): 
+                    """ THRESH FOR PROCESSCING IMAGE"""
+                    current_object: np.ndarray = IMG_LIST[0]
+                    if label_2 is not None:
+                        show_image_to_label(current_object.roi,label_2)
+                    else:
+                        cv2.imshow("ROI processes", cv2.resize(current_object.roi,(300,300),cv2.INTER_CUBIC))
+                    #cv2.imwrite(f'CREVIS_IMG/extractFrame/DetectFail_num_{i}.jpg',current_object.roi) #save the frame to file
+                    i += 1 #increase the number of object
+                    processing_queue.put(current_object)
+                    print("Object sent to processing queue")
+                    IMG_LIST.pop(0)
+                
+                #cv2.imshow("ROI", cv2.resize(ROI,(300,300),cv2.INTER_CUBIC)) #show the current object in processing
+                
+                #IMG_LIST.append(QR_Object)
+            
+            FRAME_LIST.pop(0) #remove the first frame in the list
+            
+        key = cv2.waitKey(30) & 0xFF
+        if key == 27 or run == False:  # ESC để thoát
+            break
+        
     # --- end while ---
     print("Stop camera")
     cv2.destroyAllWindows()
@@ -187,12 +278,16 @@ def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
         streamSource.contents.release(streamSource)   
         return
     # release stream
-    streamSource.contents.release(streamSource)  
+    streamSource.contents.release(streamSource)
+    stop_event.set()  
+    
     return
+    
 
 def StopSystem() -> None:
     global run
     run = False
+
 
 def main():
     RunSystem(None,None,None,None) #run the system

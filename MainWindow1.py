@@ -22,6 +22,7 @@ import os
 import csv
 import datetime
 import threading
+import atexit
 
 # import packeges for sending mail
 import smtplib
@@ -36,6 +37,9 @@ class Ui_MainWindow(object):
         def setupUi(self, MainWindow):
                 self.MySQLconn = None
                 self.PLCconn = None
+                
+                atexit.register(self.cleanup_on_exit)
+                MainWindow.closeEvent = self.closeEvent
                 
                 MainWindow.setObjectName("MainWindow")
                 MainWindow.resize(1000, 520)
@@ -529,21 +533,12 @@ class Ui_MainWindow(object):
                 if self.MySQLconn is None:
                         QtWidgets.QMessageBox.warning(None, "Warning", "Please connect to MySQL and PLC first.")
                         return
-                #create a thread to run the system
-                if hasattr(self, 'camera') and self.camera.is_alive():
-                        QtWidgets.QMessageBox.warning(None, "Warning", "Camera is already running.")
-                        return
-                self.camera = threading.Thread(
-                        target=RunSystem, 
-                        args=(self.label, self.label_2,self.MySQLconn,self.PLCconn))
-                self.camera.start()
+                threading.Thread(target=RunSystem, args=(self.label, self.label_2,self.MySQLconn,self.PLCconn)).start()
         
         #STOP CAMERA THE CAMERA
         def stop_camera(self):
                 #stop the thread is running camera
                 StopSystem()
-                if hasattr(self, 'camera') and self.camera.is_alive():
-                        self.camera.join(timeout=1) #wait for the thread to finish
                 
                 #clear camera on screen
                 self.label.clear()
@@ -690,6 +685,66 @@ class Ui_MainWindow(object):
                 QtWidgets.QMessageBox.information(None, "Database Reset", "Database reset successfully.")
         #END RESET DATABASE
         
+        ######################### EXIT GUI #########################
+        def closeEvent(self, event):
+                """Handle window close event"""
+                try:
+                        # Stop the camera system first
+                        StopSystem()
+                        
+                        # Stop the timer
+                        if hasattr(self, 'timer'):
+                                self.timer.stop()
+                        
+                        # Disconnect from devices
+                        self.cleanup_connections()
+                        
+                        # Show goodbye message
+                        QtWidgets.QMessageBox.information(None, "System Shutdown", 
+                                                        "System stopped safely.\nAll connections closed.")
+                        
+                        # Accept the close event
+                        event.accept()
+                        
+                except Exception as e:
+                        print(f"Error during shutdown: {e}")
+                        event.accept()  # Still close even if there's an error
+
+        def cleanup_connections(self):
+                """Clean up MySQL and PLC connections"""
+                close_status = []
+                
+                # Close MySQL connection
+                if self.MySQLconn is not None:
+                        try:
+                                self.MySQLconn.closeConnection()
+                                close_status.append("MySQL connection closed successfully")
+                                print("MySQL connection closed")
+                        except Exception as e:
+                                close_status.append(f"Error closing MySQL: {e}")
+                                print(f"Error closing MySQL: {e}")
+                        finally:
+                                self.MySQLconn = None
+
+                # Close PLC connection  
+                if self.PLCconn is not None:
+                        try:
+                                self.PLCconn.closeConnection()
+                                close_status.append("PLC connection closed successfully")
+                                print("PLC connection closed")
+                        except Exception as e:
+                                close_status.append(f"Error closing PLC: {e}")
+                                print(f"Error closing PLC: {e}")
+                        finally:
+                                self.PLCconn = None
+                
+                # Print status to console
+                for status in close_status:
+                        print(status)
+
+        def cleanup_on_exit(self):
+                print("Program is exiting... cleaning up connections")
+                self.cleanup_connections()
 #####################        #END OF THE CLASS UI MAINWINDOW #########################################
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)

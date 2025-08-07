@@ -2,9 +2,12 @@
 from APICamera.MVSDK import *
 from APICamera.ImageConvert import *
 from APICamera.SetUpCREVISCAM import *
+from APICamera.GetValueCREVISCAM import *
 
 import cv2
+import numpy as np
 from DA_Connection import *
+
 
 def turnOnCamera():
     countFail = 0
@@ -26,13 +29,17 @@ def turnOnCamera():
                         height=1236,
                         offsetX=0,
                         offsetY=0,
-                        exposureTimeVal=35000,
-                        gainVal=300000,
+                        exposureTimeVal=250,
+                        gainVal=250000,
                         acqMode = b"Continuous") #set the camera settings
     
+    if streamSource is None:
+        print("Failed to set camera settings.")
+        return -1
     print("start grabbing")
     # start grabbing 
-    nRet = streamSource.contents.startGrabbing(streamSource, c_ulonglong(0), \
+    
+    nRet = streamSource.contents.startGrabbing(streamSource, c_ulonglong(0), 
                                                c_int(GENICAM_EGrabStrategy.grabStrartegySequential))
     if( nRet != 0):
         print("startGrabbing fail!")
@@ -40,13 +47,16 @@ def turnOnCamera():
         streamSource.contents.release(streamSource)   
         return -1
     
-    TimeoutValue = 1000 #timeout value for getFrame
+    TimeoutValue = 500 #timeout value for getFrame
+    # varibale for record video
+    recording = False
+    video_writer = None
     while True: # loop for stream camera
          # create frame
         raw_frame = pointer(GENICAM_Frame())
         nRet = streamSource.contents.getFrame(streamSource, byref(raw_frame), c_uint(TimeoutValue))
         if ( nRet != 0 ):
-            print("getFrame fail! Timeout:%d ms", TimeoutValue)
+            print(f"getFrame fail! Timeout:%d ms", TimeoutValue)
             # release if getFrame fail
             streamSource.contents.release(streamSource)   
             return
@@ -62,6 +72,8 @@ def turnOnCamera():
         
         # convert frame to OpenCV format
         frame = convertOpenCV(raw_frame) #convert the frame to OpenCV format
+        #print("Frame shape:", frame.shape)
+
         if frame is None:
             print("convertOpenCV fail!")
             # release frame
@@ -72,13 +84,35 @@ def turnOnCamera():
         
         # display the frame
         copyForDisplay = frame.copy() #copy the frame for display
-        display_frame = cv2.resize(copyForDisplay,(500,500), interpolation=cv2.INTER_AREA)
+        display_frame = cv2.resize(copyForDisplay,(600,600), interpolation=cv2.INTER_AREA)
         
         cv2.imshow("Camera Stream", display_frame)
+        key = cv2.waitKey(1) & 0xFF
+        # record if press "s"
+        if key == ord('s'):
+            recording = not recording
+            if recording:
+                print("Started recording...")
+                filename = f"/home/pi/capstone-project/CREVIS_IMG/Video/record5-Te250.avi"
+                fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                video_writer = cv2.VideoWriter(filename, fourcc, 20.0, (frame.shape[1], frame.shape[0]),isColor = False)
+            else:
+                print("Stopped recording.")
+                if video_writer:
+                    video_writer.release()
+                    video_writer = None
+
+        if recording and video_writer:
+            video_writer.write(frame)
+
         gc.collect()
-        
-        if (cv2.waitKey(1) & 0xFF == 27):  # Press 'ESC' to exit
+
+        if key == 27:  # ESC
             break
+        # release video writer if still open
+        if video_writer:
+            video_writer.release()
+
     # release stream source
     return turnOffCamera(cap, streamSource)
 
