@@ -28,7 +28,6 @@ class DA_Send2MySQL:
         query = "SELECT 1 FROM qrnotsorted WHERE id = %s" #query to check if the data is exist
         self.cursor.execute(query, (data,))
         result = self.cursor.fetchone()
-        
         return result is not None #true if data is exist, false if data is not exist
     
     # Show the data in the table qrissorted
@@ -70,28 +69,30 @@ class DA_Send2MySQL:
         self.conn.commit()
 
     def sendData2mysql(self,data) -> None:
-        def splitData(data:str) -> tuple:
-            if '-' not in data:
-                return (data,)
-            return tuple(data.split('-'))
-    
-        handleData = splitData(data) #convert to tuple for add to db
-
-        #take current time
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        handleData = handleData + (timestamp,)
-    
-        column = "(id_sorted, type_product_sorted, product_name_sorted, NSX_sorted, sortedTime)"
-        query = f"INSERT IGNORE INTO qrissorted {column} VALUES (%s, %s, %s, %s, %s)"
-    #insert data to db    
         try:
-            self.cursor.execute(query,handleData)
+        #Select information from qrnotsorted where id == data
+            query_check = """
+                SELECT id, type_product, product_name, NSX
+                FROM qrnotsorted
+                WHERE id = %s
+            """
+            self.cursor.execute(query_check, (data,))
+            result = self.cursor.fetchone()
+
+            # Add time data was added into qrissorted
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            handleData = result + (timestamp,)
+
+            # add inform mapping from qrnotsorted to qrissorted
+            column = "(id_sorted, type_product_sorted, product_name_sorted, NSX_sorted, sortedTime)"
+            query_insert = f"INSERT IGNORE INTO qrissorted {column} VALUES (%s, %s, %s, %s, %s)"
+
+            self.cursor.execute(query_insert, handleData)
             self.conn.commit()
             print("Data inserted successfully")
-        except mysql.connector.Error as e: #catch the error
-            print(e)
-        finally:
-            data = ''
+
+        except mysql.connector.Error as e:
+            print("MySQL Error in sendData2mysql:", e)
     
     def resetDB(self) -> None:
         self.cursor.callproc("resetDB")

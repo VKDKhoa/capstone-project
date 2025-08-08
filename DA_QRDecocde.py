@@ -73,13 +73,13 @@ class QRcodeRead:
             return ''
         self.data = self.QR_info[0].data.decode("utf-8")
         x,y,w,h = self.QR_info[0].rect
-        cv2.rectangle(self.frame,(x,y),(x+w,y+h),(255,0,255),2) #drawing rectangle around QR
+        cv2.rectangle(self.frame,(x,y),(x+w+50,y+h+50),0,12) #drawing rectangle around QR
         return self.data 
     
     def CheckingAndSendData(self,data: str, MySQLconn: DA_Send2MySQL,PLCconn: DA_SendSignal2PLC) -> None:
         if len(data) <= 0:
             return
-        #self.data = data.replace(" ","") #clean the data with leftover space
+        self.data = data.replace(" ","") #clean the data with leftover space
         #print(self.data)
         IDProduct:str = self.data[:7] if len(self.data) > 7 else self.data
         if re.match(self.pattern, IDProduct):
@@ -110,7 +110,7 @@ def Tranform2Thresh(img: np.ndarray, thresh_Val:int, equal:bool) -> np.ndarray:
     _,thresh = cv2.threshold(gray,thresh_Val,255,cv2.THRESH_BINARY)
     return thresh
 
-def ReadAndDecodeQR(frame: np.ndarray, MySQLconn, PLCconn) -> bool:
+def ReadAndDecodeQR(frame: np.ndarray, MySQLconn: DA_Send2MySQL,PLCconn: DA_SendSignal2PLC) -> bool:
     # First attempt to decode the QR code
     QRobject = QRcodeRead(frame)
     #gray = cv2.cvtColor(QRobject.frame,cv2.COLOR_BGR2GRAY) if len(QRobject.frame.shape) > 2 else QRobject.frame
@@ -148,7 +148,7 @@ def ReadAndDecodeQR(frame: np.ndarray, MySQLconn, PLCconn) -> bool:
     #angle2Rot = QRobject.angle if 30 < QRobject.angle < 80 else (135 - QRobject.angle if 80 < QRobject.angle <= 90 else 0)
     #QRobject.angle = -angle2Rot
     #img = QRobject.Rot(img)
-    t#hresh = Tranform2Thresh(img,128,True)
+    #thresh = Tranform2Thresh(img,128,True)
     #cv2.imshow("img in final attemp ",cv2.resize(thresh,(300,300)))
     #data = QRobject.decodeQRdata(thresh)
     #show('img in last attemp to decode',thresh)

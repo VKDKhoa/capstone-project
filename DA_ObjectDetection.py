@@ -57,9 +57,10 @@ class Object:
                 #print("pos ", Cy / (Fy / 2), ",Area ratio = ", area / (frame.shape[0]*frame.shape[1]))
                 if 0.958 < Cy / (Fy / 2) <  1.820: # to confrim that object is in the middle of frame
                     #print("pos ", Cy / (Fy / 2), "Area: ", area)
-                    #x, y, w, h = cv2.boundingRect(cnt) # create rectangle: x,y is first coordinate angle, w and h is width and heigh respectively
+                    x, y, w, h = cv2.boundingRect(cnt) # create rectangle: x,y is first coordinate angle, w and h is width and heigh respectively
                     print("Both Area and pos is available ", Cy / (Fy / 2), ",Area ratio = ", area / (frame.shape[0]*frame.shape[1]))
                     roi: np.ndarray = frame.copy() #create ROI object
+                    roi = roi[y:y+h,x:x+w]
                     print("object roi save success")
                     return roi #return the ROI
                 else:

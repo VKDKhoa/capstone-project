@@ -40,16 +40,6 @@ VideoPath = [0,1,'IMG/Video/record.mp4']
 #init the frame
 global run
 run = False
-
-# store result into output.txt for debug
-import sys
-def run_and_log(log_file: str) -> None:
-    log_file = open(log_file, "a")
-    log_file.write("\n\n=== Run ===\n")
-    log_file.write("Output:\n")
-    log_file.flush()
-    sys.stdout = log_file
-    sys.stderr = log_file
         
 #show image from camera openCV to label in GUI, for display purpose
 def show_image_to_label(cv_img: np.ndarray, label: QPixmap) -> None:
@@ -59,7 +49,7 @@ def show_image_to_label(cv_img: np.ndarray, label: QPixmap) -> None:
     h, w, ch = resize_img.shape #get the height, width and channel of the image
     bytes_per_line = ch * w # number of bytes per line, using to convert to QImage
 
-    qt_image = QImage(resize_img.data, w, h, bytes_per_line, QImage.Format_RGB888) #
+    qt_image = QImage(resize_img.data, w, h, bytes_per_line, QImage.Format_RGB888)
     pixmap = QPixmap.fromImage(qt_image)
 
     label.setPixmap(pixmap.scaled(label.width(), label.height(), Qt.KeepAspectRatio))
@@ -67,24 +57,18 @@ def show_image_to_label(cv_img: np.ndarray, label: QPixmap) -> None:
 
 ######## FUNCTION FOR IMAGE PROCESSING IN THREAD #######################
 processing_queue = queue.Queue()
-display_queue = queue.Queue() 
+display_queue = queue.Queue()
 stop_event = threading.Event()
-
+""" PROCESSING EACH OF IMAGE PRODUCT """
 def process_img(Product: Object,MySQLconn, PLCconn) -> None:
-    """ PROCESSING EACH OF IMAGE PRODUCT """
-    Product.isDefected = DetectDefection(Product.roi,Product.isDefected)
     
-    if(Product.isDefected):
-        print("Product has damage")
-        cv2.imshow("Damage Product", cv2.resize(Product.roi, (300, 300)))
-        cv2.waitKey(1)
+    Product.isDefected = DetectDefection(Product.roi, Product.isDefected)
+    if Product.isDefected:
+        display_queue.put(("Damage", Product.roi))
         return
-    print("product has no damage, start decode QR")
-    isQrProduct: bool = ReadAndDecodeQR(Product.roi,MySQLconn,PLCconn)
-    if isQrProduct:
-        print("decode QR success")
-    else:
-        print("decode false")
+
+    isQrProduct = ReadAndDecodeQR(Product.roi, MySQLconn, PLCconn)
+    display_queue.put(("OK", Product.roi))
 
 def processing_worker(MySQLconn, PLCconn):
     """Worker thread run continously"""
@@ -100,9 +84,9 @@ def processing_worker(MySQLconn, PLCconn):
         except queue.Empty:
             continue
 
+"""MAIN SOURCE FOR RUNNING SYSTEM"""
 def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
     
-    #run_and_log("output.txt") #save result in terminal to output.txt for debug
     ############### Connect and create Camera #############################
     countFail = 0
     cap = -1 #initialize camera
@@ -191,6 +175,29 @@ def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
         else:
             cv2.imshow("display frame", cv2.resize(display_frame,(500,500))) #show the frame in window
         
+        # display image from camera extract
+        try:
+            while True:
+                tag, img = display_queue.get_nowait()
+                if tag == "Damage":
+                    if MySQLconn is not None:
+                        MySQLconn.handleWithDamagedData() 
+                    if PLCconn is not None:
+                        PLCconn.SendToPLC("Damaged")
+                    
+                    if label_2 is None:
+                        cv2.imshow("Damage Product", cv2.resize(img, (300, 300)))
+                    else:
+                        show_image_to_label(img,label_2)
+                
+                elif tag == "OK":
+                    if label_2 is None:
+                        cv2.imshow("ROI processes", cv2.resize(img, (300, 300)))
+                    else:
+                        show_image_to_label(img,label_2)
+                display_queue.task_done()
+        except queue.Empty:
+            pass
         #Write the code here
         frame: np.ndarray = cv2.cvtColor(raw_frame.copy(),cv2.COLOR_BGR2GRAY) if(len(frame.shape) > 2) else frame  #resize the frame to fit the label size
         
@@ -215,7 +222,7 @@ def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
                 print(f"previous time detect object: {t_prev}")
                 print(f"t_prev memory address: {id(t_prev)}")  # Kiểm tra biến
                 print(f"time space = {(t_current - t_prev)}")
-                if((t_current - t_prev) < 0.3):
+                if((t_current - t_prev) < 0.09):
                     print("time space too small: time space = ", (t_current - t_prev))
                     FRAME_LIST.pop(0)
                     continue
@@ -238,10 +245,7 @@ def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
                 if(len(IMG_LIST) > 0): 
                     """ THRESH FOR PROCESSCING IMAGE"""
                     current_object: np.ndarray = IMG_LIST[0]
-                    if label_2 is not None:
-                        show_image_to_label(current_object.roi,label_2)
-                    else:
-                        cv2.imshow("ROI processes", cv2.resize(current_object.roi,(300,300),cv2.INTER_CUBIC))
+                    
                     #cv2.imwrite(f'CREVIS_IMG/extractFrame/DetectFail_num_{i}.jpg',current_object.roi) #save the frame to file
                     i += 1 #increase the number of object
                     processing_queue.put(current_object)
