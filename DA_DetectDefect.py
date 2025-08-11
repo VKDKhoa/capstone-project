@@ -37,8 +37,9 @@ def DetectDefection(frame: np.ndarray, isDefected: bool) -> bool:
     frame = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY) if(len(frame.shape) > 2) else frame
     # base on testing, lp = 30, up = 50, size = 11,
     MASK_LISK: list[dict] = [
-        create_Mask(11,3,30,70,1,19000,22000),
-        create_Mask(21,3,30,70,1,16000,18990),
+        create_Mask(11,3,30,70,1,19000,26000),
+        create_Mask(11,3,30,70,1,12000,15990),
+        create_Mask(21,3,30,70,1,16000,18990)
     ] 
     #applying each mask to detect defect
     for index,msk in enumerate(MASK_LISK):
@@ -50,20 +51,28 @@ def DetectDefection(frame: np.ndarray, isDefected: bool) -> bool:
         if not isDefected:
             for cnt in contours:
                 area = cv2.contourArea(cnt)
-                #if area > 3000:
-                #    x,y,w,h = cv2.boundingRect(cnt)
-                #    cv2.putText(frame,str(area),(x-30,y-15),
-                #               cv2.FONT_HERSHEY_SIMPLEX,
-                #                fontScale=2.3,
-                #               color=255,
-                #               thickness=6) #text for defect area
+                if area > 3000:
+                    x,y,w,h = cv2.boundingRect(cnt)
+                    cv2.putText(frame,str(area),(x-30,y-15),
+                               cv2.FONT_HERSHEY_SIMPLEX,
+                                fontScale=2.3,
+                               color=255,
+                               thickness=6) #text for defect area
                 #print("Area: ",area)
                 if (msk['MinArea2Detect'] < area < msk['MaxAreaDefect']): #mask[1] fit with 400
-                    #print(f"[DEBUG] Found contour with area = {area}, required ({msk['MinArea2Detect']},{msk['MaxAreaDefect']})")
+                    _,minRect,_ = cv2.minAreaRect(cnt)
+                    print(f"min Area Defect: {minRect[0] * minRect[1]}")
+                    if (minRect[0] * minRect[1] > 20000 and index == 1): 
+                        print("skip this defected")
+                        continue
+                    elif (minRect[0] * minRect[1] > 50000):
+                        continue
+                    print("pass min area check")
+                    print(f"[DEBUG] Found contour with area = {area}, at mask {index} ,required ({msk['MinArea2Detect']},{msk['MaxAreaDefect']})")
                     x,y,w,h = cv2.boundingRect(cnt) #only get the first defect area 
                     cv2.rectangle(frame,(x-10,y-10),(x+w+50,y+h+50),0,12) #rectangle for defect area
                     cv2.rectangle(frame,(x-30,y-15),(x+w+90,y-80),0,-1) #background for text
-                    cv2.putText(frame,"Defected: " + str(area),(x-30,y-15),
+                    cv2.putText(frame,"Defected: " ,(x-30,y-15),
                                 cv2.FONT_HERSHEY_SIMPLEX,
                                 fontScale=2.3,
                                 color=255,
