@@ -76,27 +76,45 @@ class QRcodeRead:
         cv2.rectangle(self.frame,(x,y),(x+w+50,y+h+50),0,12) #drawing rectangle around QR
         return self.data 
     
-    def CheckingAndSendData(self,data: str, MySQLconn: DA_Send2MySQL,PLCconn: DA_SendSignal2PLC) -> None:
+    def CheckingAndSendData(self, data: str, MySQLconn: DA_Send2MySQL, PLCconn: DA_SendSignal2PLC) -> None:
+        print(f"[DEBUG] === START CheckingAndSendData ===")
+        print(f"[DEBUG] Input data: '{data}'")
+    
         if len(data) <= 0:
+            print(f"[DEBUG] Empty data, returning")
             return
-        self.data = data.replace(" ","") #clean the data with leftover space
-        #print(self.data)
-        IDProduct:str = self.data[:7] if len(self.data) > 7 else self.data
+        
+        self.data = data.replace(" ", "")
+        print(f"[DEBUG] Cleaned data: '{self.data}'")
+    
+        IDProduct: str = self.data[:7] if len(self.data) >= 7 else self.data
+        print(f"[DEBUG] IDProduct: '{IDProduct}' (length: {len(IDProduct)})")
+    
         if re.match(self.pattern, IDProduct):
+            print(f"[DEBUG] Pattern MATCHED for: '{IDProduct}'")
+        
             isExist = MySQLconn.checkDataExist(IDProduct)
+            print(f"[DEBUG] checkDataExist() returned: {isExist} (type: {type(isExist)})")
+        
             if not isExist:
-                print("Data is not exist")
+                print(f"[ERROR] Data '{IDProduct}' NOT FOUND in database")
                 MySQLconn.handleWithNoData(self.data)
                 PLCconn.SendToPLC("No data in DB")
-                return  
+                return
+            else:
+                print(f"[SUCCESS] Data '{IDProduct}' FOUND in database")
+            
+        # Tiếp tục xử lý...
             MySQLconn.sendData2mysql(self.data)
             type_product = IDProduct[:2]
-            productName:str = 'SuaBot' if type_product == 'SB' else ('SuaTuoi' if type_product == 'ST' else 'SuaTraiCay')
-            print(productName)
+            productName: str = 'SuaBot' if type_product == 'SB' else ('SuaTuoi' if type_product == 'ST' else 'SuaTraiCay')
+            print(f"[SUCCESS] Product: {productName}")
             PLCconn.SendToPLC(productName)
         else:
-            print(self.data)
+            print(f"[ERROR] Pattern NOT MATCHED for: '{IDProduct}'")
             PLCconn.SendToPLC("No data in DB")
+        
+    print(f"[DEBUG] === END CheckingAndSendData ===")
 
 def improveIMG(QRobject: QRcodeRead,img: np.ndarray) -> np.ndarray:
     img = QRobject.gamma_correction(QRobject.frame) #improve contrast

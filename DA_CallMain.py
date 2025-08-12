@@ -222,7 +222,7 @@ def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
                 print(f"previous time detect object: {t_prev}")
                 print(f"t_prev memory address: {id(t_prev)}")  # Kiểm tra biến
                 print(f"time space = {(t_current - t_prev)}")
-                if((t_current - t_prev) < 0.09):
+                if((t_current - t_prev) < 0.5):
                     print("time space too small: time space = ", (t_current - t_prev))
                     FRAME_LIST.pop(0)
                     continue
