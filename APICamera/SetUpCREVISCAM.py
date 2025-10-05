@@ -376,3 +376,41 @@ def convertOpenCV(frame) -> numpy.ndarray:
         cvImage = frameData.reshape((imageParams.height, imageParams.width))
     
     return cvImage
+
+def isGammaSupported(camera):
+    gammaNode = pointer(GENICAM_DoubleNode())
+    gammaNodeInfo = GENICAM_DoubleNodeInfo()
+    gammaNodeInfo.pCamera = pointer(camera)
+    gammaNodeInfo.attrName = b"Gamma"
+
+    nRet = GENICAM_createDoubleNode(byref(gammaNodeInfo), byref(gammaNode))
+    if nRet != 0:
+        return False
+    gammaNode.contents.release(gammaNode)
+    return True
+
+def setGamma(camera, gammaVal):
+    # Create a pointer to the Gamma node
+    
+    gammaNode = pointer(GENICAM_DoubleNode())
+    gammaNodeInfo = GENICAM_DoubleNodeInfo()
+    gammaNodeInfo.pCamera = pointer(camera)
+    gammaNodeInfo.attrName = b"Gamma"
+
+    # Initialize the Gamma node
+    nRet = GENICAM_createDoubleNode(byref(gammaNodeInfo), byref(gammaNode))
+    if nRet != 0:
+        print("Failed to create Gamma node.")
+        return -1
+
+    # Set the gamma value
+    nRet = gammaNode.contents.setValue(gammaNode, c_double(gammaVal))
+    if nRet != 0:
+        print("Failed to set Gamma value.")
+        gammaNode.contents.release(gammaNode)
+        return -1
+
+    # Release the node after use
+    gammaNode.contents.release(gammaNode)
+    print(f"Gamma value set to: {gammaVal}")
+    return 0
