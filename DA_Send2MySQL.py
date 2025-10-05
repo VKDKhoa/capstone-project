@@ -94,9 +94,9 @@ class DA_Send2MySQL:
     def handleWithNoData(self,data) -> None:
         """ Process when data not found in data base """
         try:
-            self.cursor.callproc("insert_Nobody_product",[data])
+            self.cursor.callproc("insert_nobody_product",[data])
             self.conn.commit()
-            print(f"[MySQL] Saved '{data}' to qrnodata")
+            #print(f"[MySQL] Saved '{data}' to qrnodata")
         except mysql.connector.Error as e:
             print("[MySQL] Error in handleWithNoData:", e)
 
@@ -126,7 +126,7 @@ class DA_Send2MySQL:
         
             if not result:
                 print(f"[ERROR] ID {data} not found in qrnotsorted after cleaning.")
-                self.handleWithNoData(data)  
+                self.handleWithNoData(data) #handleWithNoData
                 return
         
             print(f"[SUCCESS] Found data in qrnotsorted: {result}")

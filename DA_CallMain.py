@@ -103,8 +103,8 @@ def RunSystem(label, label_2,MySQLconn, PLCconn)-> None:
                         height=1236,
                         offsetX= 0,
                         offsetY=0,
-                        exposureTimeVal=250,
-                        gainVal=250000,
+                        exposureTimeVal= 250, #250
+                        gainVal= 250000, #250000
                         acqMode = b"Continuous") #set the camera settings
     
     if streamSource is None:

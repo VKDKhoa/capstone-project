@@ -303,10 +303,10 @@ class Ui_MainWindow(object):
                 # setting the size of the columns by data length
                 self.tableWidget.setColumnWidth(0, 80)   # ID
                 self.tableWidget.setColumnWidth(1, 60)   # type
-                self.tableWidget.setColumnWidth(2, 160)  # name
-                self.tableWidget.setColumnWidth(3, 160)  # NSX
-                self.tableWidget.setColumnWidth(4, 150)  # time
-                self.tableWidget.setColumnWidth(5, 140)  # status
+                self.tableWidget.setColumnWidth(2, 150)  # name
+                self.tableWidget.setColumnWidth(3, 150)  # NSX
+                self.tableWidget.setColumnWidth(4, 140)  # time
+                self.tableWidget.setColumnWidth(5, 130)  # status
 
                 #setting the tableWidget - end
                 
@@ -353,7 +353,7 @@ class Ui_MainWindow(object):
 
                 #setting export device button
                 self.pushButton_6 = QtWidgets.QPushButton(self.tab2)
-                self.pushButton_6.setGeometry(QtCore.QRect(550,2, 150, 50))
+                self.pushButton_6.setGeometry(QtCore.QRect(510,2, 150, 50))
                 font = QtGui.QFont()
                 font.setBold(True)
                 font.setWeight(75)
@@ -379,7 +379,7 @@ class Ui_MainWindow(object):
                 
                 #setting send mail button
                 self.pushButton_7 = QtWidgets.QPushButton(self.tab2)
-                self.pushButton_7.setGeometry(QtCore.QRect(720, 2, 150, 50))
+                self.pushButton_7.setGeometry(QtCore.QRect(675, 2, 150, 50))
                 font = QtGui.QFont()
                 font.setBold(True)
                 font.setWeight(75)

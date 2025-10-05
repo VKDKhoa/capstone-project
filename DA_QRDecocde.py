@@ -147,8 +147,14 @@ def ReadAndDecodeQR(frame: np.ndarray, MySQLconn: DA_Send2MySQL,PLCconn: DA_Send
     #Second Attemp, will imporve the contrast and make edge more sharpen for easier decode
     img = QRobject.frame
     img = cv2.cvtColor(QRobject.frame,cv2.COLOR_BGR2GRAY) if len(img.shape) > 2 else img
+    data = QRobject.decodeQRdata(img)
+    if len(data) > 0:  # Successfully detected QR code
+        print(f"success at first attempt")
+        QRobject.CheckingAndSendData(data,MySQLconn, PLCconn) if MySQLconn is not None and PLCconn is not None else None
+        print("QR code data:", data)
+        return True
     #img = improveIMG(QRobject,img)
-    thresh_Val = np.array([40,45,50,55,60,70,80])
+    thresh_Val = np.array([30,35,40,45,50,55,60,70,80])
     for th in thresh_Val :
         thresh = Tranform2Thresh(img,th,False)
         #cv2.imshow(f"thresh val = {th} for second attemp ",cv2.resize(thresh,(300,300)))
