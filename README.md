@@ -1,3 +1,3 @@
 Sample code/repo to conect camera: 
-  - Linux/Rasperry: https://github.com/VKDKhoa/MVviewerHuarayTech.git
-  - Window: https://github.com/CREVIS
+  - Linux_arm/Rasperry: https://github.com/VKDKhoa/MVviewerHuarayTech.git
+  - Linux_amd/Window: https://github.com/CREVIS
